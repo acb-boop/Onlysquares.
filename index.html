@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Simulation with Special Blocks and Sound Effects</title>
+    <title>Enhanced Simulation with Special Blocks and Items</title>
     <style>
         html, body {
             margin: 0;
@@ -47,7 +47,7 @@
         
         .frame-grid {
             position: absolute;
-            width: 100%;
+            width: 1Apply00%;
             height: 100%;
             background-image: 
                 linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
@@ -599,8 +599,7 @@
             <p id="selection-status">No object selected</p>
         </div>
     </div>
-
-    <script>
+   <script>
         // Constants
         const DIRECTIONS = [
             { x: 1, y: -1 },  // 45 degrees
@@ -703,18 +702,18 @@
         // Load an individual sound file
         async function loadSound(index) {
             try {
-                const response = await fetch(`Under${index}.wav`);
+                const response = await fetch(`under${index}.wav`);
                 if (!response.ok) {
-                    throw new Error(`Failed to load Under${index}.wav (${response.status})`);
+                    throw new Error(`Failed to load under${index}.wav (${response.status})`);
                 }
                 
                 const arrayBuffer = await response.arrayBuffer();
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
                 soundBuffers[index - 1] = audioBuffer;
-                console.log(`Loaded Under${index}.wav`);
+                console.log(`Loaded under${index}.wav`);
             } catch (error) {
-                console.error(`Error loading Under${index}.wav:`, error);
+                console.error(`Error loading under${index}.wav:`, error);
                 // Create a silent buffer as a fallback
                 const sampleRate = audioContext.sampleRate;
                 const buffer = audioContext.createBuffer(2, sampleRate * 0.5, sampleRate);
@@ -723,7 +722,7 @@
         }
 
         // Play the next bounce sound
-        function playNextBounceSound() {
+        function playBounceSound() {
             if (!soundToggle.checked || !audioContext || !soundsLoaded) return;
             
             // Resume audio context if it's suspended (needed for Chrome)
@@ -735,7 +734,7 @@
                 // Get the current sound buffer
                 const buffer = soundBuffers[currentBounceSound - 1];
                 if (!buffer) {
-                    console.warn(`Sound buffer not available for Under${currentBounceSound}.wav`);
+                    console.warn(`Sound buffer not available for under${currentBounceSound}.wav`);
                     return;
                 }
                 
@@ -762,13 +761,13 @@
                 initAudio();
                 setTimeout(() => {
                     if (soundsLoaded) {
-                        playNextBounceSound();
+                        playBounceSound();
                     } else {
                         soundStatus.textContent = "Sound status: Still loading sounds, try again in a moment";
                     }
                 }, 500);
             } else if (soundsLoaded) {
-                playNextBounceSound();
+                playBounceSound();
                 soundStatus.textContent = `Sound status: Playing test sound (${currentBounceSound-1})`;
             } else {
                 soundStatus.textContent = "Sound status: Sounds still loading, please wait";
@@ -846,7 +845,162 @@
         let selectedSquare = null;
         let selectedSquareIndex = null;
         let selectedWaypoint = null;
-// Initialize squares
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let currentObstacleType = 'normal';
+        let currentBlockType = 'teleporter';
+        let currentItemType = 'knife';
+        let currentMovementType = 'linear';
+        let squareSize = NORMAL_SQUARE_SIZE;
+        let isGameFinished = false;
+        let pressureCheckTimer = null;
+        let isFullscreen = false;
+        
+        // For moving obstacles
+        let currentMovingObstacle = null;
+        let movingWaypoints = [];
+        let isSettingWaypoints = false;
+        let pathIndicator = null;
+        
+        // Define square images and shadow colors
+        const squareImages = [
+            { url: 'red.png', knifeUrl: 'red-knife.png', shadow: 'rgba(255, 0, 0, 0.8)' },
+            { url: 'green.png', knifeUrl: 'green-knife.png', shadow: 'rgba(17, 239, 255, 0.8)' },
+            { url: 'blue.png', knifeUrl: 'blue-knife.png', shadow: 'rgba(33, 150, 243, 0.8)' },
+            { url: 'yellow.png', knifeUrl: 'yellow-knife.png', shadow: 'rgba(255, 193, 7, 0.8)' }
+        ];
+        
+        // Define spawn positions
+        const spawnPositions = [
+            { x: 50, y: 50 },
+            { x: 150, y: 150 },
+            { x: 250, y: 250 },
+            { x: 350, y: 350 }
+        ];
+        
+        // Square state objects
+        const squareStates = squares.map((square, index) => {
+            return {
+                element: square,
+                x: spawnPositions[index].x,
+                y: spawnPositions[index].y,
+                width: NORMAL_SQUARE_SIZE,
+                height: NORMAL_SQUARE_SIZE,
+                direction: DIRECTIONS[index % DIRECTIONS.length],
+                speed: SPEED,
+                image: squareImages[index].url,
+                knifeImage: squareImages[index].knifeUrl,
+                shadow: squareImages[index].shadow,
+                spawnX: spawnPositions[index].x,
+                spawnY: spawnPositions[index].y,
+                isSmall: false,
+                isExploding: false,
+                isKilled: false,
+                hasKnife: false,
+                teleportCooldown: 0,
+                knifePickupCooldown: 0
+            };
+        });
+        
+        // Setup spawn points
+        spawnPoints.forEach((spawn, index) => {
+            spawn.style.left = spawnPositions[index].x + 'px';
+            spawn.style.top = spawnPositions[index].y + 'px';
+            spawn.style.width = NORMAL_SQUARE_SIZE + 'px';
+            spawn.style.height = NORMAL_SQUARE_SIZE + 'px';
+        });
+        
+        // Obstacles array
+        let obstacles = [];
+        
+        // Blocks array
+        let blocks = [];
+
+        // Items array
+        let items = [];
+        
+        // Initialize initial obstacle
+        initialObstacle.style.left = (frame.clientWidth / 2 - 35) + 'px';
+        initialObstacle.style.top = (frame.clientHeight / 2 - 5) + 'px';
+        initialObstacle.style.width = '70px';
+        initialObstacle.style.height = '10px';
+        
+        // Add to obstacles array
+        obstacles.push({
+            element: initialObstacle,
+            x: frame.clientWidth / 2 - 35,
+            y: frame.clientHeight / 2 - 5,
+            width: 70,
+            height: 10,
+            shape: 'rectangle',
+            color: 'rgba(0, 0, 0, 0.8)',
+            type: 'normal',
+            durability: 3,
+            moving: false
+        });
+        
+        // Toggle fullscreen mode
+        function toggleFullscreen() {
+            // Stop animation if running
+            const wasAnimating = !!animationId;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+                stopPressureChecker();
+            }
+            
+            isFullscreen = !isFullscreen;
+            if (isFullscreen) {
+                frame.classList.add('fullscreen');
+                // Store original dimensions before going fullscreen
+                frame.dataset.originalWidth = frame.style.width || '700px';
+                frame.dataset.originalHeight = frame.style.height || '500px';
+                
+                // Apply fullscreen
+                document.body.style.overflow = 'hidden'; // Prevent scrolling
+            } else {
+                frame.classList.remove('fullscreen');
+                // Restore original dimensions
+                frame.style.width = frame.dataset.originalWidth;
+                frame.style.height = frame.dataset.originalHeight;
+                
+                // Restore scrolling
+                document.body.style.overflow = '';
+            }
+            
+            // Reinitialize squares to update spawn positions based on new container size
+            initializeSquares();
+            
+            // Restart animation if it was running
+            if (wasAnimating && !isGameFinished) {
+                animate();
+                startPressureChecker();
+            }
+        }
+        
+        // Update selection status text
+        function updateSelectionStatus() {
+            if (selectedSquare) {
+                selectionStatus.textContent = `Square ${selectedSquareIndex + 1} selected`;
+            } else if (selectedObstacle) {
+                const obstacleIndex = obstacles.indexOf(selectedObstacle);
+                selectionStatus.textContent = `Obstacle ${obstacleIndex + 1} selected`;
+            } else if (selectedBlock) {
+                const blockIndex = blocks.indexOf(selectedBlock);
+                selectionStatus.textContent = `${selectedBlock.type.charAt(0).toUpperCase() + selectedBlock.type.slice(1)} Block ${blockIndex + 1} selected`;
+            } else if (selectedItem) {
+                const itemIndex = items.indexOf(selectedItem);
+                selectionStatus.textContent = `${selectedItem.type.charAt(0).toUpperCase() + selectedItem.type.slice(1)} Item ${itemIndex + 1} selected`;
+            } else if (selectedWaypoint) {
+                const waypointIndex = movingWaypoints.indexOf(selectedWaypoint);
+                selectionStatus.textContent = `Waypoint ${waypointIndex + 1} selected`;
+            } else {
+                selectionStatus.textContent = 'No object selected';
+            }
+        }
+        
+        // Initialize squares
         function initializeSquares() {
             isGameFinished = false;
             finishMessage.style.display = 'none';
@@ -953,7 +1107,8 @@
                 spawn.style.display = 'none';
             });
         }
-// This function explicitly moves all squares to their spawn points
+        
+        // This function explicitly moves all squares to their spawn points
         function moveSquaresToSpawn() {
             squareStates.forEach(state => {
                 state.x = state.spawnX;
@@ -1014,7 +1169,8 @@
             item.element.style.width = item.size + 'px';
             item.element.style.height = item.size + 'px';
         }
-// Create particle trail
+        
+        // Create particle trail
         function createTrail(state) {
             if (frameCount % TRAIL_SPAWN_RATE !== 0 || state.isExploding || state.isKilled) return;
             
@@ -1048,6 +1204,7 @@
                 }, 500);
             }, TRAIL_LIFETIME * Math.random());
         }
+        
         // Create explosion effect
         function createExplosion(square) {
             // Mark square as exploding
@@ -1402,7 +1559,8 @@
                 finishMessage.style.display = 'flex';
             }, 200);
         }
-       // Create collision effect
+        
+        // Create collision effect
         function createCollisionEffect(x, y, color1, color2) {
             const effect = document.createElement('div');
             effect.classList.add('collision-effect');
@@ -1423,7 +1581,7 @@
                 }
             }, 500);
         }
-       
+        
         // Check if a position is obstructed by obstacles or blocks
         function isPositionObstructed(x, y, width, height) {
             // Check obstacles
@@ -1619,7 +1777,7 @@
                 }
             });
         }
-        
+
         // Check collision with obstacle - updated to handle different types of obstacles
         function checkObstacleCollision(state, obstacle) {
             if (state.isExploding || state.isKilled) return false;
@@ -1662,6 +1820,9 @@
             }
             
             if (hasCollided) {
+                // Play bounce sound on collision
+                playBounceSound();
+                
                 // Get centers
                 const centerX = state.x + state.width / 2;
                 const centerY = state.y + state.height / 2;
@@ -1684,9 +1845,6 @@
                         obstacle.color
                     );
                     
-                    // Play bounce sound
-                    playNextBounceSound();
-                    
                     // Don't bounce if the obstacle was destroyed (durability <= 0)
                     if (obstacle.durability <= 0) {
                         return true;
@@ -1699,9 +1857,6 @@
                         state.shadow, 
                         obstacle.color
                     );
-                    
-                    // Play bounce sound
-                    playNextBounceSound();
                 }
                 
                 // Determine which side was hit (for proper reflection)
@@ -1784,8 +1939,7 @@
             
             return false;
         }
-
-        // Check collision with frame
+       // Check collision with frame
         function checkFrameCollision(state) {
             if (state.isExploding || state.isKilled) return false;
             
@@ -1817,15 +1971,15 @@
             
             // Create wall collision effect
             if (hasCollided) {
+                // Play bounce sound on wall collision
+                playBounceSound();
+                
                 createCollisionEffect(
                     state.x + state.width/2,
                     state.y + state.height/2,
                     state.shadow,
                     'rgba(0, 0, 0, 0.8)'
                 );
-                
-                // Play bounce sound
-                playNextBounceSound();
                 
                 // Add pulse effect to the square but without rotation
                 state.element.style.transition = 'transform 0.2s ease';
@@ -1900,7 +2054,7 @@
             
             return false;
         }
-
+        
         // Check collision between squares with proper reflection
         function checkSquareCollisions() {
             for (let i = 0; i < squareStates.length; i++) {
@@ -2000,11 +2154,11 @@
                         
                         // No knife, proceed with normal collision
                         
+                        // Play bounce sound on square collision
+                        playBounceSound();
+                        
                         // Create collision effect
                         createCollisionEffect(collisionX, collisionY, square1.shadow, square2.shadow);
-                        
-                        // Play bounce sound
-                        playNextBounceSound();
                         
                         // Calculate collision angle
                         const dx = center2X - center1X;
@@ -2054,8 +2208,7 @@
                 }
             }
         }
-
-        // Animation loop
+       // Animation loop
         function animate() {
             frameCount++;
             
@@ -2208,7 +2361,7 @@
             
             return newObstacle;
         }
-
+        
         // Create a breakable obstacle
         function createBreakableObstacle(x, y) {
             // Get options for the new obstacle
@@ -2327,7 +2480,7 @@
             
             return newObstacle;
         }
-
+        
         // Create a block with special properties
         function createBlock(x, y, type) {
             // Get options for the new block
@@ -2606,8 +2759,7 @@
             
             return newWaypoint;
         }
-
-        // Setup obstacle interaction (drag, delete, select)
+       // Setup obstacle interaction (drag, delete, select)
         function setupObstacleInteraction(element, obstacle) {
             // Delete button
             const deleteBtn = element.querySelector('.obstacle-delete') || document.createElement('div');
@@ -2712,7 +2864,7 @@
                 }
             });
         }
-
+        
         // Setup block interaction (drag, delete, select)
         function setupBlockInteraction(element, block) {
             // Delete button
@@ -2811,7 +2963,7 @@
                 }
             });
         }
-
+        
         // Setup item interaction (drag, delete, select)
         function setupItemInteraction(element, item) {
             // Delete button
@@ -2904,7 +3056,6 @@
                 }
             });
         }
-
         // Setup square interaction (select, drag)
         function setupSquareInteraction(element, square, index) {
             // Select square
@@ -3044,7 +3195,7 @@
                 selectedWaypoint = null;
             }
         }
-
+        
         // Mouse move event for dragging
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
@@ -3052,21 +3203,6 @@
             const frameRect = frame.getBoundingClientRect();
             
             if (selectedObstacle) {
-                // Calculate new position within frame boundaries
-                let newX = e.clientX - dragOffsetX - frameRect.left;
-                let newY = e.clientY - dragOffsetY - frameRect.top;
-                
-                // Apply boundaries
-                newX = Math.max(0, Math.min(newX, frame.clientWidth - selectedObstacle.width));
-                newY = Math.max(0, Math.min(newY, frame.clientHeight - selectedObstacle.height));
-                
-                // Update position
-                selectedObstacle.x = newX;
-                selectedObstacle.y = newY;
-                
-                // Update DOM
-                updateObstaclePosition(selectedObstacle);
-            } else if (selectedBlock) {
                 // Calculate new position within frame boundaries
                 let newX = e.clientX - dragOffsetX - frameRect.left;
                 let newY = e.clientY - dragOffsetY - frameRect.top;
@@ -3166,7 +3302,7 @@
                 pressureCheckTimer = null;
             }
         }
-
+        
         // Keyboard event handling
         document.addEventListener('keydown', (e) => {
             // Initialize audio on first key press
@@ -3285,7 +3421,7 @@
                 
                 updateSelectionStatus();
             }
-
+            
             // Arrow keys for moving selected object
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
                 // Stop animation if it's running and a square is selected
@@ -3483,8 +3619,7 @@
                     updatePathIndicator();
                 }
             }
-            
-            // R key to restart if game finished or exit fullscreen mode
+// R key to restart if game finished or exit fullscreen mode
             if (e.key === 'r' || e.key === 'R') {
                 if (isFullscreen) {
                     // Exit fullscreen mode
@@ -4093,4 +4228,4 @@
         moveSquaresToSpawn();
     </script>
 </body>
-    </html>
+                        </html>
