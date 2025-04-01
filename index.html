@@ -181,6 +181,37 @@
             border: 2px solid #FFFFFF;
         }
 
+        .sound-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+            display: flex;
+            gap: 5px;
+        }
+
+        .sound-btn {
+           padding: 5px 10px;
+           font-size: 12px;
+           background-color: #2196F3;
+           color: white;
+           border: none;
+           border-radius: 4px;
+           cursor: pointer;
+           opacity: 0.7;
+           transition: all 0.2s ease;
+        }
+
+       .sound-btn:hover {
+           opacity: 1;
+           transform: translateY(-2px);
+        }
+
+       .sound-btn.active {
+           background-color: #FF5722;
+           opacity: 1;
+        }
+
         .item {
             position: absolute;
             z-index: 2;
@@ -472,6 +503,11 @@
             <label>Square Size:</label>
             <button id="normalSizeBtn" class="active">Normal (40px)</button>
             <button id="smallSizeBtn">Small (20px)</button>
+        </div>
+        
+        <div class="sound-controls">
+            <button id="soundOnBtn" class="sound-btn active">Sound On</button>
+            <button id="soundOffBtn" class="sound-btn">Sound Off</button>
         </div>
         
         <div class="obstacle-options" id="obstacleOptions">
@@ -795,6 +831,33 @@
             // Increment sound index and wrap around to 1 when it reaches the max
             currentSoundIndex = (currentSoundIndex % TOTAL_BOUNCE_SOUNDS) + 1;
         }
+
+        let soundEnabled = true;
+           const soundOnBtn = document.getElementById('soundOnBtn');
+           const soundOffBtn = document.getElementById('soundOffBtn');
+
+// Modify the playBounceSound function to check if sound is enabled
+// Replace your existing playBounceSound function with this one
+       function playBounceSound() {
+    // Only play sound if enabled
+       if (!soundEnabled) return;
+    
+       const sound = new Audio(`under${currentSoundIndex}.wav`);
+       sound.currentTime = 0;
+    
+    // Add promise handling for better browser compatibility
+       const playPromise = sound.play();
+    
+       if (playPromise !== undefined) {
+           playPromise.catch(error => {
+               console.log("Audio play error:", error);
+           });
+       }
+    
+    // Increment sound index and wrap around to 1 when it reaches the max
+       currentSoundIndex = (currentSoundIndex % TOTAL_BOUNCE_SOUNDS) + 1;
+     }
+
         
         // Toggle fullscreen mode
         function toggleFullscreen() {
@@ -4082,6 +4145,39 @@
         
         // Make sure to move squares to their spawn positions initially
         moveSquaresToSpawn();
+
+        soundOnBtn.addEventListener('click', () => {
+        soundEnabled = true;
+        soundOnBtn.classList.add('active');
+        soundOffBtn.classList.remove('active');
+    
+    // Play a test sound to verify it's working
+        const testSound = new Audio('under1.wav');
+        testSound.volume = 0.3;
+    
+        const playPromise = testSound.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.log("Test audio play error:", error);
+            });
+        }
+    });
+
+    soundOffBtn.addEventListener('click', () => {
+        soundEnabled = false;
+        soundOnBtn.classList.remove('active');
+        soundOffBtn.classList.add('active');
+    });
+
+// Initialize based on default state
+    if (soundEnabled) {
+        soundOnBtn.classList.add('active');
+        soundOffBtn.classList.remove('active');
+    } else {
+        soundOnBtn.classList.remove('active');
+        soundOffBtn.classList.add('active');
+    }
+        
     </script>
 </body>
 </html>>
