@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Simulation with Special Blocks and Items</title>
+    <title>Enhanced Simulation with Special Blocks and Sound Effects</title>
     <style>
         html, body {
             margin: 0;
@@ -73,7 +73,7 @@
         }
         
         .square:nth-child(3) {
-            background-image: url('file:///storage/emulated/0/Folder 1/Telegram Archive/green.png');
+            background-image: url('green.png');
             box-shadow: none;
         }
         
@@ -179,37 +179,6 @@
             background-color: rgba(0, 0, 0, 0.7);
             background-image: url('f.png');
             border: 2px solid #FFFFFF;
-        }
-
-        .sound-controls {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 10;
-            display: flex;
-            gap: 5px;
-        }
-
-        .sound-btn {
-           padding: 5px 10px;
-           font-size: 12px;
-           background-color: #2196F3;
-           color: white;
-           border: none;
-           border-radius: 4px;
-           cursor: pointer;
-           opacity: 0.7;
-           transition: all 0.2s ease;
-        }
-
-       .sound-btn:hover {
-           opacity: 1;
-           transform: translateY(-2px);
-        }
-
-       .sound-btn.active {
-           background-color: #FF5722;
-           opacity: 1;
         }
 
         .item {
@@ -471,6 +440,21 @@
             font-weight: bold;
             color: #FF5722;
         }
+
+        /* Sound controls */
+        .sound-controls {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .sound-status {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -498,16 +482,20 @@
             <button id="addItemBtn">Add Item</button>
             <button id="clearAllBtn">Clear All</button>
         </div>
+
+        <div class="sound-controls">
+            <label>
+                <input type="checkbox" id="soundToggle" checked>
+                Sound Effects
+            </label>
+            <button id="testSoundBtn">Test Sound</button>
+            <div id="soundStatus" class="sound-status">Sound status: waiting for user interaction</div>
+        </div>
         
         <div class="square-size-control">
             <label>Square Size:</label>
             <button id="normalSizeBtn" class="active">Normal (40px)</button>
             <button id="smallSizeBtn">Small (20px)</button>
-        </div>
-        
-        <div class="sound-controls">
-            <button id="soundOnBtn" class="sound-btn active">Sound On</button>
-            <button id="soundOffBtn" class="sound-btn">Sound Off</button>
         </div>
         
         <div class="obstacle-options" id="obstacleOptions">
@@ -635,9 +623,7 @@
         const BREAKABLE_PIECES = 12; // number of pieces when obstacle breaks
         const PRESSURE_CHECK_INTERVAL = 100; // ms to check for square pressure
         const KNIFE_PICKUP_COOLDOWN = 1000; // 1 second cooldown in milliseconds
-        
-        // Sound related constants
-        const TOTAL_BOUNCE_SOUNDS = 12; // Number of sound files (under1.wav to under1.wav)
+        const TOTAL_BOUNCE_SOUNDS = 19; // Total number of bounce sound files
         
         // Elements
         const frame = document.getElementById('frame');
@@ -659,6 +645,142 @@
         const finishMessage = document.getElementById('finishMessage');
         
         const selectionStatus = document.getElementById('selection-status');
+        const soundToggle = document.getElementById('soundToggle');
+        const soundStatus = document.getElementById('soundStatus');
+        const testSoundBtn = document.getElementById('testSoundBtn');
+        
+        // ================ IMPROVED SOUND SYSTEM ==================
+        // Sound effects management with Web Audio API for better browser support
+        let currentBounceSound = 1; // Track which bounce sound to play next (1-19)
+        let audioContext = null;
+        let soundBuffers = [];
+        let soundsLoaded = false;
+        let userInteracted = false;
+
+        // Initialize audio context on user interaction
+        function initAudio() {
+            if (audioContext) return;
+
+            try {
+                // Create audio context
+                window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioContext();
+                
+                soundStatus.textContent = "Sound status: Initializing audio...";
+                
+                // Start loading sounds
+                loadSounds();
+                
+                userInteracted = true;
+            } catch (error) {
+                console.error("Error creating AudioContext:", error);
+                soundStatus.textContent = "Sound status: Error initializing audio";
+            }
+        }
+
+        // Load all sound files
+        async function loadSounds() {
+            soundBuffers = [];
+            
+            // Load all 19 sounds in parallel
+            const loadPromises = [];
+            
+            for (let i = 1; i <= TOTAL_BOUNCE_SOUNDS; i++) {
+                loadPromises.push(loadSound(i));
+            }
+            
+            try {
+                await Promise.all(loadPromises);
+                soundsLoaded = true;
+                soundStatus.textContent = `Sound status: Ready (${soundBuffers.length} sounds loaded)`;
+                console.log(`Successfully loaded ${soundBuffers.length} sounds`);
+            } catch (error) {
+                console.error("Error loading sounds:", error);
+                soundStatus.textContent = "Sound status: Error loading sounds";
+            }
+        }
+
+        // Load an individual sound file
+        async function loadSound(index) {
+            try {
+                const response = await fetch(`Under${index}.wav`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load Under${index}.wav (${response.status})`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                soundBuffers[index - 1] = audioBuffer;
+                console.log(`Loaded Under${index}.wav`);
+            } catch (error) {
+                console.error(`Error loading Under${index}.wav:`, error);
+                // Create a silent buffer as a fallback
+                const sampleRate = audioContext.sampleRate;
+                const buffer = audioContext.createBuffer(2, sampleRate * 0.5, sampleRate);
+                soundBuffers[index - 1] = buffer;
+            }
+        }
+
+        // Play the next bounce sound
+        function playNextBounceSound() {
+            if (!soundToggle.checked || !audioContext || !soundsLoaded) return;
+            
+            // Resume audio context if it's suspended (needed for Chrome)
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            
+            try {
+                // Get the current sound buffer
+                const buffer = soundBuffers[currentBounceSound - 1];
+                if (!buffer) {
+                    console.warn(`Sound buffer not available for Under${currentBounceSound}.wav`);
+                    return;
+                }
+                
+                // Create a source node
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                
+                // Connect to audio output
+                source.connect(audioContext.destination);
+                
+                // Play the sound
+                source.start(0);
+                
+                // Move to next sound, cycling back to 1 after reaching 19
+                currentBounceSound = (currentBounceSound % TOTAL_BOUNCE_SOUNDS) + 1;
+            } catch (error) {
+                console.error("Error playing sound:", error);
+            }
+        }
+
+        // Test playing sound function
+        function testSound() {
+            if (!audioContext) {
+                initAudio();
+                setTimeout(() => {
+                    if (soundsLoaded) {
+                        playNextBounceSound();
+                    } else {
+                        soundStatus.textContent = "Sound status: Still loading sounds, try again in a moment";
+                    }
+                }, 500);
+            } else if (soundsLoaded) {
+                playNextBounceSound();
+                soundStatus.textContent = `Sound status: Playing test sound (${currentBounceSound-1})`;
+            } else {
+                soundStatus.textContent = "Sound status: Sounds still loading, please wait";
+            }
+        }
+
+        // Add event listener for the test sound button
+        testSoundBtn.addEventListener('click', testSound);
+
+        // Initialize audio on first user interaction
+        document.addEventListener('click', initAudio, { once: true });
+        document.addEventListener('keydown', initAudio, { once: true });
         
         // Ensure initial square visibility
         squares.forEach(square => {
@@ -724,202 +846,7 @@
         let selectedSquare = null;
         let selectedSquareIndex = null;
         let selectedWaypoint = null;
-        let isDragging = false;
-        let dragOffsetX = 0;
-        let dragOffsetY = 0;
-        let currentObstacleType = 'normal';
-        let currentBlockType = 'teleporter';
-        let currentItemType = 'knife';
-        let currentMovementType = 'linear';
-        let squareSize = NORMAL_SQUARE_SIZE;
-        let isGameFinished = false;
-        let pressureCheckTimer = null;
-        let isFullscreen = false;
-        
-        // Sound state
-        let currentSoundIndex = 1; // Keep track of which sound to play next
-        
-        // For moving obstacles
-        let currentMovingObstacle = null;
-        let movingWaypoints = [];
-        let isSettingWaypoints = false;
-        let pathIndicator = null;
-        
-        // Define square images and shadow colors
-        const squareImages = [
-            { url: 'red.png', knifeUrl: 'red-knife.png', shadow: 'rgba(255, 0, 0, 0.8)' },
-            { url: 'green.png', knifeUrl: 'green-knife.png', shadow: 'rgba(17, 239, 255, 0.8)' },
-            { url: 'blue.png', knifeUrl: 'blue-knife.png', shadow: 'rgba(33, 150, 243, 0.8)' },
-            { url: 'yellow.png', knifeUrl: 'yellow-knife.png', shadow: 'rgba(255, 193, 7, 0.8)' }
-        ];
-        
-        // Define spawn positions
-        const spawnPositions = [
-            { x: 50, y: 50 },
-            { x: 150, y: 150 },
-            { x: 250, y: 250 },
-            { x: 350, y: 350 }
-        ];
-        
-        // Square state objects
-        const squareStates = squares.map((square, index) => {
-            return {
-                element: square,
-                x: spawnPositions[index].x,
-                y: spawnPositions[index].y,
-                width: NORMAL_SQUARE_SIZE,
-                height: NORMAL_SQUARE_SIZE,
-                direction: DIRECTIONS[index % DIRECTIONS.length],
-                speed: SPEED,
-                image: squareImages[index].url,
-                knifeImage: squareImages[index].knifeUrl,
-                shadow: squareImages[index].shadow,
-                spawnX: spawnPositions[index].x,
-                spawnY: spawnPositions[index].y,
-                isSmall: false,
-                isExploding: false,
-                isKilled: false,
-                hasKnife: false,
-                teleportCooldown: 0,
-                knifePickupCooldown: 0
-            };
-        });
-        
-        // Setup spawn points
-        spawnPoints.forEach((spawn, index) => {
-            spawn.style.left = spawnPositions[index].x + 'px';
-            spawn.style.top = spawnPositions[index].y + 'px';
-            spawn.style.width = NORMAL_SQUARE_SIZE + 'px';
-            spawn.style.height = NORMAL_SQUARE_SIZE + 'px';
-        });
-        
-        // Obstacles array
-        let obstacles = [];
-        
-        // Blocks array
-        let blocks = [];
-
-        // Items array
-        let items = [];
-        
-        // Initialize initial obstacle
-        initialObstacle.style.left = (frame.clientWidth / 2 - 35) + 'px';
-        initialObstacle.style.top = (frame.clientHeight / 2 - 5) + 'px';
-        initialObstacle.style.width = '70px';
-        initialObstacle.style.height = '10px';
-        
-        // Add to obstacles array
-        obstacles.push({
-            element: initialObstacle,
-            x: frame.clientWidth / 2 - 35,
-            y: frame.clientHeight / 2 - 5,
-            width: 70,
-            height: 10,
-            shape: 'rectangle',
-            color: 'rgba(0, 0, 0, 0.8)',
-            type: 'normal',
-            durability: 3,
-            moving: false
-        });
-        
-        // Function to play bounce sound in sequence
-        function playBounceSound() {
-            const sound = new Audio(`under${currentSoundIndex}.mp3`);
-            sound.currentTime = 0;
-            sound.play();
-            
-            // Increment sound index and wrap around to 1 when it reaches the max
-            currentSoundIndex = (currentSoundIndex % TOTAL_BOUNCE_SOUNDS) + 1;
-        }
-
-        let soundEnabled = true;
-           const soundOnBtn = document.getElementById('soundOnBtn');
-           const soundOffBtn = document.getElementById('soundOffBtn');
-
-// Modify the playBounceSound function to check if sound is enabled
-// Replace your existing playBounceSound function with this one
-       function playBounceSound() {
-    // Only play sound if enabled
-       if (!soundEnabled) return;
-    
-       const sound = new Audio(`under${currentSoundIndex}.wav`);
-       sound.currentTime = 0;
-    
-    // Add promise handling for better browser compatibility
-       const playPromise = sound.play();
-    
-       if (playPromise !== undefined) {
-           playPromise.catch(error => {
-               console.log("Audio play error:", error);
-           });
-       }
-    
-    // Increment sound index and wrap around to 1 when it reaches the max
-       currentSoundIndex = (currentSoundIndex % TOTAL_BOUNCE_SOUNDS) + 1;
-     }
-
-        
-        // Toggle fullscreen mode
-        function toggleFullscreen() {
-            // Stop animation if running
-            const wasAnimating = !!animationId;
-            if (animationId) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
-                stopPressureChecker();
-            }
-            
-            isFullscreen = !isFullscreen;
-            if (isFullscreen) {
-                frame.classList.add('fullscreen');
-                // Store original dimensions before going fullscreen
-                frame.dataset.originalWidth = frame.style.width || '700px';
-                frame.dataset.originalHeight = frame.style.height || '500px';
-                
-                // Apply fullscreen
-                document.body.style.overflow = 'hidden'; // Prevent scrolling
-            } else {
-                frame.classList.remove('fullscreen');
-                // Restore original dimensions
-                frame.style.width = frame.dataset.originalWidth;
-                frame.style.height = frame.dataset.originalHeight;
-                
-                // Restore scrolling
-                document.body.style.overflow = '';
-            }
-            
-            // Reinitialize squares to update spawn positions based on new container size
-            initializeSquares();
-            
-            // Restart animation if it was running
-            if (wasAnimating && !isGameFinished) {
-                animate();
-                startPressureChecker();
-            }
-        }
-        
-        // Update selection status text
-        function updateSelectionStatus() {
-            if (selectedSquare) {
-                selectionStatus.textContent = `Square ${selectedSquareIndex + 1} selected`;
-            } else if (selectedObstacle) {
-                const obstacleIndex = obstacles.indexOf(selectedObstacle);
-                selectionStatus.textContent = `Obstacle ${obstacleIndex + 1} selected`;
-            } else if (selectedBlock) {
-                const blockIndex = blocks.indexOf(selectedBlock);
-                selectionStatus.textContent = `${selectedBlock.type.charAt(0).toUpperCase() + selectedBlock.type.slice(1)} Block ${blockIndex + 1} selected`;
-            } else if (selectedItem) {
-                const itemIndex = items.indexOf(selectedItem);
-                selectionStatus.textContent = `${selectedItem.type.charAt(0).toUpperCase() + selectedItem.type.slice(1)} Item ${itemIndex + 1} selected`;
-            } else if (selectedWaypoint) {
-                const waypointIndex = movingWaypoints.indexOf(selectedWaypoint);
-                selectionStatus.textContent = `Waypoint ${waypointIndex + 1} selected`;
-            } else {
-                selectionStatus.textContent = 'No object selected';
-            }
-        }
-        
-        // Initialize squares
+// Initialize squares
         function initializeSquares() {
             isGameFinished = false;
             finishMessage.style.display = 'none';
@@ -1026,8 +953,7 @@
                 spawn.style.display = 'none';
             });
         }
-        
-        // This function explicitly moves all squares to their spawn points
+// This function explicitly moves all squares to their spawn points
         function moveSquaresToSpawn() {
             squareStates.forEach(state => {
                 state.x = state.spawnX;
@@ -1088,8 +1014,7 @@
             item.element.style.width = item.size + 'px';
             item.element.style.height = item.size + 'px';
         }
-        
-        // Create particle trail
+// Create particle trail
         function createTrail(state) {
             if (frameCount % TRAIL_SPAWN_RATE !== 0 || state.isExploding || state.isKilled) return;
             
@@ -1123,7 +1048,6 @@
                 }, 500);
             }, TRAIL_LIFETIME * Math.random());
         }
-        
         // Create explosion effect
         function createExplosion(square) {
             // Mark square as exploding
@@ -1216,485 +1140,488 @@
                 square.element.style.display = 'none';
             }, 500);
         }
+        
         // Break an obstacle when it gets hit
-       function breakObstacle(obstacle, collisionX, collisionY) {
-           // Decrease durability
-           obstacle.durability--;
-           
-           // Get current durability
-           const durability = obstacle.durability;
-           
-           // Create hit effect
-           const effect = document.createElement('div');
-           effect.classList.add('collision-effect');
-           effect.style.left = `${collisionX - 25}px`;
-           effect.style.top = `${collisionY - 25}px`;
-           effect.style.backgroundColor = 'rgba(255, 165, 0, 0.5)';
-           effect.style.boxShadow = '0 0 20px rgba(255, 140, 0, 0.8)';
-           frame.appendChild(effect);
-           
-           // If durability is zero, break the obstacle
-           if (durability <= 0) {
-               // Create breaking pieces effect
-               for (let i = 0; i < BREAKABLE_PIECES; i++) {
-                   const piece = document.createElement('div');
-                   piece.classList.add('breakable-pieces');
-                   
-                   // Position randomly within the obstacle
-                   const pieceX = obstacle.x + Math.random() * obstacle.width;
-                   const pieceY = obstacle.y + Math.random() * obstacle.height;
-                   
-                   piece.style.left = `${pieceX}px`;
-                   piece.style.top = `${pieceY}px`;
-                   
-                   // Random rotation
-                   piece.style.transform = `rotate(${Math.random() * 360}deg)`;
-                   
-                   // Add to frame
-                   frame.appendChild(piece);
-                   
-                   // Random direction and speed
-                   const angle = Math.random() * Math.PI * 2;
-                   const speed = 1 + Math.random() * 3;
-                   const dx = Math.cos(angle) * speed;
-                   const dy = Math.sin(angle) * speed;
-                   
-                   // Animate pieces
-                   let posX = pieceX;
-                   let posY = pieceY;
-                   let opacity = 1;
-                   let pieceSize = 5 + Math.random() * 5;
-                   
-                   const animatePiece = () => {
-                       posX += dx;
-                       posY += dy;
-                       opacity -= 0.02;
-                       
-                       piece.style.left = `${posX}px`;
-                       piece.style.top = `${posY}px`;
-                       piece.style.opacity = opacity;
-                       
-                       if (opacity > 0.1) {
-                           requestAnimationFrame(animatePiece);
-                       } else {
-                           piece.remove();
-                       }
-                   };
-                   
-                   requestAnimationFrame(animatePiece);
-               }
-               
-               // Remove the obstacle
-               const index = obstacles.indexOf(obstacle);
-               if (index > -1) {
-                   obstacle.element.remove();
-                   obstacles.splice(index, 1);
-               }
-               
-               // Clear selection if this was the selected obstacle
-               if (selectedObstacle === obstacle) {
-                   selectedObstacle = null;
-                   updateSelectionStatus();
-               }
-           } else {
-               // Update the data attribute
-               obstacle.element.setAttribute('data-durability', durability);
-               
-               // Visual feedback that the obstacle is damaged
-               obstacle.element.style.opacity = 0.5 + (durability / 10) * 0.5;
-           }
-       }
-      // Teleport square to another teleporter
-       function teleportSquare(square, sourceBlock) {
-           if (square.teleportCooldown > 0) return;
+        function breakObstacle(obstacle, collisionX, collisionY) {
+            // Decrease durability
+            obstacle.durability--;
+            
+            // Get current durability
+            const durability = obstacle.durability;
+            
+            // Create hit effect
+            const effect = document.createElement('div');
+            effect.classList.add('collision-effect');
+            effect.style.left = `${collisionX - 25}px`;
+            effect.style.top = `${collisionY - 25}px`;
+            effect.style.backgroundColor = 'rgba(255, 165, 0, 0.5)';
+            effect.style.boxShadow = '0 0 20px rgba(255, 140, 0, 0.8)';
+            frame.appendChild(effect);
+            
+            // If durability is zero, break the obstacle
+            if (durability <= 0) {
+                // Create breaking pieces effect
+                for (let i = 0; i < BREAKABLE_PIECES; i++) {
+                    const piece = document.createElement('div');
+                    piece.classList.add('breakable-pieces');
+                    
+                    // Position randomly within the obstacle
+                    const pieceX = obstacle.x + Math.random() * obstacle.width;
+                    const pieceY = obstacle.y + Math.random() * obstacle.height;
+                    
+                    piece.style.left = `${pieceX}px`;
+                    piece.style.top = `${pieceY}px`;
+                    
+                    // Random rotation
+                    piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+                    
+                    // Add to frame
+                    frame.appendChild(piece);
+                    
+                    // Random direction and speed
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 1 + Math.random() * 3;
+                    const dx = Math.cos(angle) * speed;
+                    const dy = Math.sin(angle) * speed;
+                    
+                    // Animate pieces
+                    let posX = pieceX;
+                    let posY = pieceY;
+                    let opacity = 1;
+                    let pieceSize = 5 + Math.random() * 5;
+                    
+                    const animatePiece = () => {
+                        posX += dx;
+                        posY += dy;
+                        opacity -= 0.02;
+                        
+                        piece.style.left = `${posX}px`;
+                        piece.style.top = `${posY}px`;
+                        piece.style.opacity = opacity;
+                        
+                        if (opacity > 0.1) {
+                            requestAnimationFrame(animatePiece);
+                        } else {
+                            piece.remove();
+                        }
+                    };
+                    
+                    requestAnimationFrame(animatePiece);
+                }
+                
+                // Remove the obstacle
+                const index = obstacles.indexOf(obstacle);
+                if (index > -1) {
+                    obstacle.element.remove();
+                    obstacles.splice(index, 1);
+                }
+                
+                // Clear selection if this was the selected obstacle
+                if (selectedObstacle === obstacle) {
+                    selectedObstacle = null;
+                    updateSelectionStatus();
+                }
+            } else {
+                // Update the data attribute
+                obstacle.element.setAttribute('data-durability', durability);
+                
+                // Visual feedback that the obstacle is damaged
+                obstacle.element.style.opacity = 0.5 + (durability / 10) * 0.5;
+            }
+        }
+        
+        // Teleport square to another teleporter
+        function teleportSquare(square, sourceBlock) {
+            if (square.teleportCooldown > 0) return;
 
-           // Find other teleporters
-           const otherTeleporters = blocks.filter(block => 
-               block.type === 'teleporter' && block !== sourceBlock
-           );
-           
-           // If no other teleporter, create a random position
-           if (otherTeleporters.length === 0) {
-               // Apply teleport cooldown
-               square.teleportCooldown = 30; // frames
-               
-               // Create teleport flash effect
-               const flash = document.createElement('div');
-               flash.classList.add('collision-effect');
-               flash.style.left = `${square.x + square.width/2 - 25}px`;
-               flash.style.top = `${square.y + square.height/2 - 25}px`;
-               flash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
-               flash.style.boxShadow = '0 0 30px #800080';
-               frame.appendChild(flash);
-               
-               // Find new valid position
-               let newX, newY;
-               let attempts = 0;
-               do {
-                   newX = Math.random() * (frame.clientWidth - square.width);
-                   newY = Math.random() * (frame.clientHeight - square.width);
-                   attempts++;
-               } while (isPositionObstructed(newX, newY, square.width, square.height) && attempts < 10);
-               
-               // If all attempts failed, find any valid position
-               if (attempts >= 10) {
-                   newX = 50;
-                   newY = 50;
-               }
-               
-               // Move square to new position
-               square.x = newX;
-               square.y = newY;
-               updateSquarePosition(square);
-               
-               // Create arrival flash effect
-               const arrivalFlash = document.createElement('div');
-               arrivalFlash.classList.add('collision-effect');
-               arrivalFlash.style.left = `${square.x + square.width/2 - 25}px`;
-               arrivalFlash.style.top = `${square.y + square.height/2 - 25}px`;
-               arrivalFlash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
-               arrivalFlash.style.boxShadow = '0 0 30px #800080';
-               frame.appendChild(arrivalFlash);
-           } else {
-               // Choose a random teleporter
-               const targetTeleporter = otherTeleporters[Math.floor(Math.random() * otherTeleporters.length)];
-               
-               // Apply teleport cooldown
-               square.teleportCooldown = 30; // frames
-               
-               // Create teleport flash effect
-               const flash = document.createElement('div');
-               flash.classList.add('collision-effect');
-               flash.style.left = `${square.x + square.width/2 - 25}px`;
-               flash.style.top = `${square.y + square.height/2 - 25}px`;
-               flash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
-               flash.style.boxShadow = '0 0 30px #800080';
-               frame.appendChild(flash);
-               
-               // Calculate position near the target teleporter
-               const newX = targetTeleporter.x + (targetTeleporter.width / 2) - (square.width / 2);
-               const newY = targetTeleporter.y + targetTeleporter.height;
-               
-               // Move square to new position
-               square.x = newX;
-               square.y = newY;
-               updateSquarePosition(square);
-               
-               // Create arrival flash effect
-               const arrivalFlash = document.createElement('div');
-               arrivalFlash.classList.add('collision-effect');
-               arrivalFlash.style.left = `${square.x + square.width/2 - 25}px`;
-               arrivalFlash.style.top = `${square.y + square.height/2 - 25}px`;
-               arrivalFlash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
-               arrivalFlash.style.boxShadow = '0 0 30px #800080';
-               frame.appendChild(arrivalFlash);
-           }
-       }
-       
+            // Find other teleporters
+            const otherTeleporters = blocks.filter(block => 
+                block.type === 'teleporter' && block !== sourceBlock
+            );
+            
+            // If no other teleporter, create a random position
+            if (otherTeleporters.length === 0) {
+                // Apply teleport cooldown
+                square.teleportCooldown = 30; // frames
+                
+                // Create teleport flash effect
+                const flash = document.createElement('div');
+                flash.classList.add('collision-effect');
+                flash.style.left = `${square.x + square.width/2 - 25}px`;
+                flash.style.top = `${square.y + square.height/2 - 25}px`;
+                flash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
+                flash.style.boxShadow = '0 0 30px #800080';
+                frame.appendChild(flash);
+                
+                // Find new valid position
+                let newX, newY;
+                let attempts = 0;
+                do {
+                    newX = Math.random() * (frame.clientWidth - square.width);
+                    newY = Math.random() * (frame.clientHeight - square.width);
+                    attempts++;
+                } while (isPositionObstructed(newX, newY, square.width, square.height) && attempts < 10);
+                
+                // If all attempts failed, find any valid position
+                if (attempts >= 10) {
+                    newX = 50;
+                    newY = 50;
+                }
+                
+                // Move square to new position
+                square.x = newX;
+                square.y = newY;
+                updateSquarePosition(square);
+                
+                // Create arrival flash effect
+                const arrivalFlash = document.createElement('div');
+                arrivalFlash.classList.add('collision-effect');
+                arrivalFlash.style.left = `${square.x + square.width/2 - 25}px`;
+                arrivalFlash.style.top = `${square.y + square.height/2 - 25}px`;
+                arrivalFlash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
+                arrivalFlash.style.boxShadow = '0 0 30px #800080';
+                frame.appendChild(arrivalFlash);
+            } else {
+                // Choose a random teleporter
+                const targetTeleporter = otherTeleporters[Math.floor(Math.random() * otherTeleporters.length)];
+                
+                // Apply teleport cooldown
+                square.teleportCooldown = 30; // frames
+                
+                // Create teleport flash effect
+                const flash = document.createElement('div');
+                flash.classList.add('collision-effect');
+                flash.style.left = `${square.x + square.width/2 - 25}px`;
+                flash.style.top = `${square.y + square.height/2 - 25}px`;
+                flash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
+                flash.style.boxShadow = '0 0 30px #800080';
+                frame.appendChild(flash);
+                
+                // Calculate position near the target teleporter
+                const newX = targetTeleporter.x + (targetTeleporter.width / 2) - (square.width / 2);
+                const newY = targetTeleporter.y + targetTeleporter.height;
+                
+                // Move square to new position
+                square.x = newX;
+                square.y = newY;
+                updateSquarePosition(square);
+                
+                // Create arrival flash effect
+                const arrivalFlash = document.createElement('div');
+                arrivalFlash.classList.add('collision-effect');
+                arrivalFlash.style.left = `${square.x + square.width/2 - 25}px`;
+                arrivalFlash.style.top = `${square.y + square.height/2 - 25}px`;
+                arrivalFlash.style.backgroundColor = 'rgba(75, 0, 130, 0.7)';
+                arrivalFlash.style.boxShadow = '0 0 30px #800080';
+                frame.appendChild(arrivalFlash);
+            }
+        }
        // Transform square size
-       function transformSquare(square) {
-           // Toggle size
-           square.isSmall = !square.isSmall;
-           
-           // Update size
-           if (square.isSmall) {
-               square.width = SMALL_SQUARE_SIZE;
-               square.height = SMALL_SQUARE_SIZE;
-               square.element.classList.add('small');
-           } else {
-               square.width = NORMAL_SQUARE_SIZE;
-               square.height = NORMAL_SQUARE_SIZE;
-               square.element.classList.remove('small');
-           }
-           
-           // Update DOM
-           updateSquareSize(square);
-           
-           // Create transform effect
-           const effect = document.createElement('div');
-           effect.classList.add('collision-effect');
-           effect.style.left = `${square.x + square.width/2 - 25}px`;
-           effect.style.top = `${square.y + square.height/2 - 25}px`;
-           effect.style.backgroundColor = 'rgba(0, 150, 0, 0.7)';
-           effect.style.boxShadow = '0 0 30px #00FF00';
-           frame.appendChild(effect);
-       }
+        function transformSquare(square) {
+            // Toggle size
+            square.isSmall = !square.isSmall;
+            
+            // Update size
+            if (square.isSmall) {
+                square.width = SMALL_SQUARE_SIZE;
+                square.height = SMALL_SQUARE_SIZE;
+                square.element.classList.add('small');
+            } else {
+                square.width = NORMAL_SQUARE_SIZE;
+                square.height = NORMAL_SQUARE_SIZE;
+                square.element.classList.remove('small');
+            }
+            
+            // Update DOM
+            updateSquareSize(square);
+            
+            // Create transform effect
+            const effect = document.createElement('div');
+            effect.classList.add('collision-effect');
+            effect.style.left = `${square.x + square.width/2 - 25}px`;
+            effect.style.top = `${square.y + square.height/2 - 25}px`;
+            effect.style.backgroundColor = 'rgba(0, 150, 0, 0.7)';
+            effect.style.boxShadow = '0 0 30px #00FF00';
+            frame.appendChild(effect);
+        }
 
-       // Give knife to a square
-       function giveKnife(square, knifeItem) {
-           // Add knife to square
-           square.hasKnife = true;
-           square.element.classList.add('has-knife');
-           
-           // Change square size if needed based on square size
-           if (square.isSmall) {
-               // Small square: change from 20x20 to 30x20
-               square.width = 30;
-               square.height = 20;
-           } else {
-               // Normal square: change from 40x40 to 60x40
-               square.width = 60; 
-               square.height = 40;
-           }
-           
-           // Update image to knife version
-           square.element.style.backgroundImage = `url(${square.knifeImage})`;
-           
-           // Update square size
-           updateSquareSize(square);
-           
-           // Remove knife item
-           const itemIndex = items.indexOf(knifeItem);
-           if (itemIndex > -1) {
-               knifeItem.element.remove();
-               items.splice(itemIndex, 1);
-           }
-           
-           // Create pickup effect
-           const effect = document.createElement('div');
-           effect.classList.add('collision-effect');
-           effect.style.left = `${square.x + square.width/2 - 25}px`;
-           effect.style.top = `${square.y + square.height/2 - 25}px`;
-           effect.style.backgroundColor = 'rgba(180, 180, 180, 0.7)';
-           effect.style.boxShadow = '0 0 30px #808080';
-           frame.appendChild(effect);
-       }
-       // Show finish message
-       function showFinish() {
-           if (isGameFinished) return;
-           
-           isGameFinished = true;
-           
-           // Stop animation after a small delay to show effect
-           setTimeout(() => {
-               if (animationId) {
-                   cancelAnimationFrame(animationId);
-                   animationId = null;
-               }
-               
-               // Show finish message
-               finishMessage.style.display = 'flex';
-           }, 200);
-       }
-       
+        // Give knife to a square
+        function giveKnife(square, knifeItem) {
+            // Add knife to square
+            square.hasKnife = true;
+            square.element.classList.add('has-knife');
+            
+            // Change square size if needed based on square size
+            if (square.isSmall) {
+                // Small square: change from 20x20 to 30x20
+                square.width = 30;
+                square.height = 20;
+            } else {
+                // Normal square: change from 40x40 to 60x40
+                square.width = 60; 
+                square.height = 40;
+            }
+            
+            // Update image to knife version
+            square.element.style.backgroundImage = `url(${square.knifeImage})`;
+            
+            // Update square size
+            updateSquareSize(square);
+            
+            // Remove knife item
+            const itemIndex = items.indexOf(knifeItem);
+            if (itemIndex > -1) {
+                knifeItem.element.remove();
+                items.splice(itemIndex, 1);
+            }
+            
+            // Create pickup effect
+            const effect = document.createElement('div');
+            effect.classList.add('collision-effect');
+            effect.style.left = `${square.x + square.width/2 - 25}px`;
+            effect.style.top = `${square.y + square.height/2 - 25}px`;
+            effect.style.backgroundColor = 'rgba(180, 180, 180, 0.7)';
+            effect.style.boxShadow = '0 0 30px #808080';
+            frame.appendChild(effect);
+        }
+        
+        // Show finish message
+        function showFinish() {
+            if (isGameFinished) return;
+            
+            isGameFinished = true;
+            
+            // Stop animation after a small delay to show effect
+            setTimeout(() => {
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+                
+                // Show finish message
+                finishMessage.style.display = 'flex';
+            }, 200);
+        }
        // Create collision effect
-       function createCollisionEffect(x, y, color1, color2) {
-           const effect = document.createElement('div');
-           effect.classList.add('collision-effect');
-           
-           effect.style.left = `${x - 25}px`;
-           effect.style.top = `${y - 25}px`;
-           
-           // Blend the two colors
-           effect.style.backgroundColor = color1;
-           effect.style.boxShadow = `0 0 20px ${color2}`;
-           
-           frame.appendChild(effect);
-           
-           // Remove after animation completes
-           setTimeout(() => {
-               if (effect.parentNode) {
-                   effect.parentNode.removeChild(effect);
-               }
-           }, 500);
-       }
+        function createCollisionEffect(x, y, color1, color2) {
+            const effect = document.createElement('div');
+            effect.classList.add('collision-effect');
+            
+            effect.style.left = `${x - 25}px`;
+            effect.style.top = `${y - 25}px`;
+            
+            // Blend the two colors
+            effect.style.backgroundColor = color1;
+            effect.style.boxShadow = `0 0 20px ${color2}`;
+            
+            frame.appendChild(effect);
+            
+            // Remove after animation completes
+            setTimeout(() => {
+                if (effect.parentNode) {
+                    effect.parentNode.removeChild(effect);
+                }
+            }, 500);
+        }
        
-       // Check if a position is obstructed by obstacles or blocks
-       function isPositionObstructed(x, y, width, height) {
-           // Check obstacles
-           for (const obstacle of obstacles) {
-               if (x < obstacle.x + obstacle.width &&
-                   x + width > obstacle.x &&
-                   y < obstacle.y + obstacle.height &&
-                   y + height > obstacle.y) {
-                   return true;
-               }
-           }
-           
-           // Check blocks
-           for (const block of blocks) {
-               if (x < block.x + block.width &&
-                   x + width > block.x &&
-                   y < block.y + block.height &&
-                   y + height > block.y) {
-                   return true;
-               }
-           }
+        // Check if a position is obstructed by obstacles or blocks
+        function isPositionObstructed(x, y, width, height) {
+            // Check obstacles
+            for (const obstacle of obstacles) {
+                if (x < obstacle.x + obstacle.width &&
+                    x + width > obstacle.x &&
+                    y < obstacle.y + obstacle.height &&
+                    y + height > obstacle.y) {
+                    return true;
+                }
+            }
+            
+            // Check blocks
+            for (const block of blocks) {
+                if (x < block.x + block.width &&
+                    x + width > block.x &&
+                    y < block.y + block.height &&
+                    y + height > block.y) {
+                    return true;
+                }
+            }
 
-           // Check items
-           for (const item of items) {
-               if (x < item.x + item.size &&
-                   x + width > item.x &&
-                   y < item.y + item.size &&
-                   y + height > item.y) {
-                   return true;
-               }
-           }
-           
-           return false;
-       }
+            // Check items
+            for (const item of items) {
+                if (x < item.x + item.size &&
+                    x + width > item.x &&
+                    y < item.y + item.size &&
+                    y + height > item.y) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
 
-       // Check for square being trapped (crushed) between obstacles
-       function checkSquareTrapped() {
-           squareStates.forEach(square => {
-               if (square.isExploding || square.isKilled) return;
-               
-               // Check if square is caught between obstacles or walls
-               let isTrapped = false;
-               let isLeftBlocked = false;
-               let isRightBlocked = false;
-               let isTopBlocked = false;
-               let isBottomBlocked = false;
-               
-               // Check each side for obstruction
-               // Left side
-               obstacles.forEach(obstacle => {
-                   // Skip if obstacle is breakable and already at low durability
-                   if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
-                   
-                   if (square.x <= obstacle.x + obstacle.width + 2 && 
-                       square.x >= obstacle.x + obstacle.width - 2 &&
-                       square.y + square.height >= obstacle.y &&
-                       square.y <= obstacle.y + obstacle.height) {
-                       isLeftBlocked = true;
-                   }
-               });
-               
-               // Right side
-               obstacles.forEach(obstacle => {
-                   // Skip if obstacle is breakable and already at low durability
-                   if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
-                   
-                   if (square.x + square.width >= obstacle.x - 2 && 
-                       square.x + square.width <= obstacle.x + 2 &&
-                       square.y + square.height >= obstacle.y &&
-                       square.y <= obstacle.y + obstacle.height) {
-                       isRightBlocked = true;
-                   }
-               });
-               
-               // Top side
-               obstacles.forEach(obstacle => {
-                   // Skip if obstacle is breakable and already at low durability
-                   if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
-                   
-                   if (square.y <= obstacle.y + obstacle.height + 2 && 
-                       square.y >= obstacle.y + obstacle.height - 2 &&
-                       square.x + square.width >= obstacle.x &&
-                       square.x <= obstacle.x + obstacle.width) {
-                       isTopBlocked = true;
-                   }
-               });
-               
-               // Bottom side
-               obstacles.forEach(obstacle => {
-                   // Skip if obstacle is breakable and already at low durability
-                   if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
-                   
-                   if (square.y + square.height >= obstacle.y - 2 && 
-                       square.y + square.height <= obstacle.y + 2 &&
-                       square.x + square.width >= obstacle.x &&
-                       square.x <= obstacle.x + obstacle.width) {
-                       isBottomBlocked = true;
-                   }
-               });
-               
-               // Also check frame boundaries
-               if (square.x <= 0) isLeftBlocked = true;
-               if (square.x + square.width >= frame.clientWidth) isRightBlocked = true;
-               if (square.y <= 0) isTopBlocked = true;
-               if (square.y + square.height >= frame.clientHeight) isBottomBlocked = true;
-               
-               // Check if trapped horizontally or vertically
-               if ((isLeftBlocked && isRightBlocked) || (isTopBlocked && isBottomBlocked)) {
-                   isTrapped = true;
-               }
-               
-               // If trapped, explode the square
-               if (isTrapped) {
-                   createExplosion(square);
-               }
-           });
-       }
-       // Update position of moving obstacles
-       function updateMovingObstacles() {
-           obstacles.forEach(obstacle => {
-               if (obstacle.moving && obstacle.waypoints && obstacle.waypoints.length > 1) {
-                   const waypoints = obstacle.waypoints;
-                   const speed = obstacle.speed * 0.02;
-                   
-                   if (obstacle.movementType === 'linear') {
-                       // Linear movement between waypoints
-                       const currentIndex = obstacle.currentWaypoint || 0;
-                       const nextIndex = (currentIndex + 1) % waypoints.length;
-                       
-                       const startPoint = waypoints[currentIndex];
-                       const endPoint = waypoints[nextIndex];
-                       
-                       // Update progress
-                       obstacle.progress = (obstacle.progress || 0) + speed;
-                       
-                       if (obstacle.progress >= 1) {
-                           // Move to next waypoint
-                           obstacle.currentWaypoint = nextIndex;
-                           obstacle.progress = 0;
-                       } else {
-                           // Interpolate position
-                           const newX = startPoint.x + (endPoint.x - startPoint.x) * obstacle.progress;
-                           const newY = startPoint.y + (endPoint.y - startPoint.y) * obstacle.progress;
-                           
-                           // Update position
-                           obstacle.x = newX;
-                           obstacle.y = newY;
-                           
-                           // Update DOM
-                           updateObstaclePosition(obstacle);
-                       }
-                   } else if (obstacle.movementType === 'circular') {
-                       // Circular movement using waypoints as radius control points
-                       const center = {
-                           x: 0,
-                           y: 0
-                       };
-                       
-                       // Calculate center as average of all waypoints
-                       waypoints.forEach(wp => {
-                           center.x += wp.x;
-                           center.y += wp.y;
-                       });
-                       
-                       center.x /= waypoints.length;
-                       center.y /= waypoints.length;
-                       
-                       // Calculate radius as average distance to center
-                       let radius = 0;
-                       waypoints.forEach(wp => {
-                           const dx = wp.x - center.x;
-                           const dy = wp.y - center.y;
-                           radius += Math.sqrt(dx * dx + dy * dy);
-                       });
-                       
-                       radius /= waypoints.length;
-                       
-                       // Update angle
-                       obstacle.angle = (obstacle.angle || 0) + speed;
-                       
-                       // Calculate new position
-                       const newX = center.x + Math.cos(obstacle.angle) * radius;
-                       const newY = center.y + Math.sin(obstacle.angle) * radius;
-                       
-                       // Update position
-                       obstacle.x = newX;
-                       obstacle.y = newY;
-                       
-                       // Update DOM
-                       updateObstaclePosition(obstacle);
-                   }
-               }
-           });
-       }
-       // Check collision with obstacle - updated to handle different types of obstacles
-       function checkObstacleCollision(state, obstacle) {
+        // Check for square being trapped (crushed) between obstacles
+        function checkSquareTrapped() {
+            squareStates.forEach(square => {
+                if (square.isExploding || square.isKilled) return;
+                
+                // Check if square is caught between obstacles or walls
+                let isTrapped = false;
+                let isLeftBlocked = false;
+                let isRightBlocked = false;
+                let isTopBlocked = false;
+                let isBottomBlocked = false;
+                
+                // Check each side for obstruction
+                // Left side
+                obstacles.forEach(obstacle => {
+                    // Skip if obstacle is breakable and already at low durability
+                    if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
+                    
+                    if (square.x <= obstacle.x + obstacle.width + 2 && 
+                        square.x >= obstacle.x + obstacle.width - 2 &&
+                        square.y + square.height >= obstacle.y &&
+                        square.y <= obstacle.y + obstacle.height) {
+                        isLeftBlocked = true;
+                    }
+                });
+                
+                // Right side
+                obstacles.forEach(obstacle => {
+                    // Skip if obstacle is breakable and already at low durability
+                    if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
+                    
+                    if (square.x + square.width >= obstacle.x - 2 && 
+                        square.x + square.width <= obstacle.x + 2 &&
+                        square.y + square.height >= obstacle.y &&
+                        square.y <= obstacle.y + obstacle.height) {
+                        isRightBlocked = true;
+                    }
+                });
+                
+                // Top side
+                obstacles.forEach(obstacle => {
+                    // Skip if obstacle is breakable and already at low durability
+                    if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
+                    
+                    if (square.y <= obstacle.y + obstacle.height + 2 && 
+                        square.y >= obstacle.y + obstacle.height - 2 &&
+                        square.x + square.width >= obstacle.x &&
+                        square.x <= obstacle.x + obstacle.width) {
+                        isTopBlocked = true;
+                    }
+                });
+                
+                // Bottom side
+                obstacles.forEach(obstacle => {
+                    // Skip if obstacle is breakable and already at low durability
+                    if (obstacle.type === 'breakable' && obstacle.durability <= 1) return;
+                    
+                    if (square.y + square.height >= obstacle.y - 2 && 
+                        square.y + square.height <= obstacle.y + 2 &&
+                        square.x + square.width >= obstacle.x &&
+                        square.x <= obstacle.x + obstacle.width) {
+                        isBottomBlocked = true;
+                    }
+                });
+                
+                // Also check frame boundaries
+                if (square.x <= 0) isLeftBlocked = true;
+                if (square.x + square.width >= frame.clientWidth) isRightBlocked = true;
+                if (square.y <= 0) isTopBlocked = true;
+                if (square.y + square.height >= frame.clientHeight) isBottomBlocked = true;
+                
+                // Check if trapped horizontally or vertically
+                if ((isLeftBlocked && isRightBlocked) || (isTopBlocked && isBottomBlocked)) {
+                    isTrapped = true;
+                }
+                
+                // If trapped, explode the square
+                if (isTrapped) {
+                    createExplosion(square);
+                }
+            });
+        }
+
+        // Update position of moving obstacles
+        function updateMovingObstacles() {
+            obstacles.forEach(obstacle => {
+                if (obstacle.moving && obstacle.waypoints && obstacle.waypoints.length > 1) {
+                    const waypoints = obstacle.waypoints;
+                    const speed = obstacle.speed * 0.02;
+                    
+                    if (obstacle.movementType === 'linear') {
+                        // Linear movement between waypoints
+                        const currentIndex = obstacle.currentWaypoint || 0;
+                        const nextIndex = (currentIndex + 1) % waypoints.length;
+                        
+                        const startPoint = waypoints[currentIndex];
+                        const endPoint = waypoints[nextIndex];
+                        
+                        // Update progress
+                        obstacle.progress = (obstacle.progress || 0) + speed;
+                        
+                        if (obstacle.progress >= 1) {
+                            // Move to next waypoint
+                            obstacle.currentWaypoint = nextIndex;
+                            obstacle.progress = 0;
+                        } else {
+                            // Interpolate position
+                            const newX = startPoint.x + (endPoint.x - startPoint.x) * obstacle.progress;
+                            const newY = startPoint.y + (endPoint.y - startPoint.y) * obstacle.progress;
+                            
+                            // Update position
+                            obstacle.x = newX;
+                            obstacle.y = newY;
+                            
+                            // Update DOM
+                            updateObstaclePosition(obstacle);
+                        }
+                    } else if (obstacle.movementType === 'circular') {
+                        // Circular movement using waypoints as radius control points
+                        const center = {
+                            x: 0,
+                            y: 0
+                        };
+                        
+                        // Calculate center as average of all waypoints
+                        waypoints.forEach(wp => {
+                            center.x += wp.x;
+                            center.y += wp.y;
+                        });
+                        
+                        center.x /= waypoints.length;
+                        center.y /= waypoints.length;
+                        
+                        // Calculate radius as average distance to center
+                        let radius = 0;
+                        waypoints.forEach(wp => {
+                            const dx = wp.x - center.x;
+                            const dy = wp.y - center.y;
+                            radius += Math.sqrt(dx * dx + dy * dy);
+                        });
+                        
+                        radius /= waypoints.length;
+                        
+                        // Update angle
+                        obstacle.angle = (obstacle.angle || 0) + speed;
+                        
+                        // Calculate new position
+                        const newX = center.x + Math.cos(obstacle.angle) * radius;
+                        const newY = center.y + Math.sin(obstacle.angle) * radius;
+                        
+                        // Update position
+                        obstacle.x = newX;
+                        obstacle.y = newY;
+                        
+                        // Update DOM
+                        updateObstaclePosition(obstacle);
+                    }
+                }
+            });
+        }
+        
+        // Check collision with obstacle - updated to handle different types of obstacles
+        function checkObstacleCollision(state, obstacle) {
             if (state.isExploding || state.isKilled) return false;
             
             let hasCollided = false;
@@ -1735,9 +1662,6 @@
             }
             
             if (hasCollided) {
-                // Play bounce sound on collision
-                playBounceSound();
-                
                 // Get centers
                 const centerX = state.x + state.width / 2;
                 const centerY = state.y + state.height / 2;
@@ -1760,6 +1684,9 @@
                         obstacle.color
                     );
                     
+                    // Play bounce sound
+                    playNextBounceSound();
+                    
                     // Don't bounce if the obstacle was destroyed (durability <= 0)
                     if (obstacle.durability <= 0) {
                         return true;
@@ -1772,6 +1699,9 @@
                         state.shadow, 
                         obstacle.color
                     );
+                    
+                    // Play bounce sound
+                    playNextBounceSound();
                 }
                 
                 // Determine which side was hit (for proper reflection)
@@ -1854,7 +1784,7 @@
             
             return false;
         }
-        
+
         // Check collision with frame
         function checkFrameCollision(state) {
             if (state.isExploding || state.isKilled) return false;
@@ -1887,15 +1817,15 @@
             
             // Create wall collision effect
             if (hasCollided) {
-                // Play bounce sound on wall collision
-                playBounceSound();
-                
                 createCollisionEffect(
                     state.x + state.width/2,
                     state.y + state.height/2,
                     state.shadow,
                     'rgba(0, 0, 0, 0.8)'
                 );
+                
+                // Play bounce sound
+                playNextBounceSound();
                 
                 // Add pulse effect to the square but without rotation
                 state.element.style.transition = 'transform 0.2s ease';
@@ -1907,6 +1837,7 @@
             
             return hasCollided;
         }
+        
         // Check collision with block
         function checkBlockCollision(state, block) {
             if (state.isExploding || state.isKilled) return false;
@@ -1969,7 +1900,7 @@
             
             return false;
         }
-        
+
         // Check collision between squares with proper reflection
         function checkSquareCollisions() {
             for (let i = 0; i < squareStates.length; i++) {
@@ -2069,11 +2000,11 @@
                         
                         // No knife, proceed with normal collision
                         
-                        // Play bounce sound on square collision
-                        playBounceSound();
-                        
                         // Create collision effect
                         createCollisionEffect(collisionX, collisionY, square1.shadow, square2.shadow);
+                        
+                        // Play bounce sound
+                        playNextBounceSound();
                         
                         // Calculate collision angle
                         const dx = center2X - center1X;
@@ -2123,7 +2054,7 @@
                 }
             }
         }
-        
+
         // Animation loop
         function animate() {
             frameCount++;
@@ -2277,7 +2208,7 @@
             
             return newObstacle;
         }
-        
+
         // Create a breakable obstacle
         function createBreakableObstacle(x, y) {
             // Get options for the new obstacle
@@ -2336,7 +2267,8 @@
             
             return newObstacle;
         }
- // Create a moving obstacle
+        
+        // Create a moving obstacle
         function createMovingObstacle(x, y) {
             // Get options for the new obstacle
             const width = parseInt(obstacleWidthInput.value) || 70;
@@ -2395,7 +2327,7 @@
             
             return newObstacle;
         }
-        
+
         // Create a block with special properties
         function createBlock(x, y, type) {
             // Get options for the new block
@@ -2480,7 +2412,7 @@
             
             return newItem;
         }
-        
+
         // Setup a waypoint for moving obstacles
         function setupWaypoint(element, waypoint, index) {
             // Delete button
@@ -2558,6 +2490,7 @@
                 e.preventDefault();
             });
         }
+        
         // Update path indicator for moving obstacles
         function updatePathIndicator() {
             // Remove existing path indicator
@@ -2673,7 +2606,7 @@
             
             return newWaypoint;
         }
-        
+
         // Setup obstacle interaction (drag, delete, select)
         function setupObstacleInteraction(element, obstacle) {
             // Delete button
@@ -2779,6 +2712,7 @@
                 }
             });
         }
+
         // Setup block interaction (drag, delete, select)
         function setupBlockInteraction(element, block) {
             // Delete button
@@ -2877,7 +2811,7 @@
                 }
             });
         }
-        
+
         // Setup item interaction (drag, delete, select)
         function setupItemInteraction(element, item) {
             // Delete button
@@ -2970,7 +2904,7 @@
                 }
             });
         }
-        
+
         // Setup square interaction (select, drag)
         function setupSquareInteraction(element, square, index) {
             // Select square
@@ -3110,7 +3044,7 @@
                 selectedWaypoint = null;
             }
         }
-        
+
         // Mouse move event for dragging
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
@@ -3232,9 +3166,15 @@
                 pressureCheckTimer = null;
             }
         }
-        
+
         // Keyboard event handling
         document.addEventListener('keydown', (e) => {
+            // Initialize audio on first key press
+            if (!userInteracted) {
+                initAudio();
+                userInteracted = true;
+            }
+            
             // Square selection with number keys
             if (!isNaN(parseInt(e.key)) && parseInt(e.key) >= 1 && parseInt(e.key) <= 4) {
                 const index = parseInt(e.key) - 1;
@@ -3345,7 +3285,7 @@
                 
                 updateSelectionStatus();
             }
-            
+
             // Arrow keys for moving selected object
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
                 // Stop animation if it's running and a square is selected
@@ -3587,7 +3527,7 @@
                     startPressureChecker();
                 }
             }
-            
+
             // Add speed control for selected moving obstacle (+ and - keys)
             if ((e.key === '+' || e.key === '=') && selectedObstacle && selectedObstacle.moving) {
                 // Increase speed
@@ -3712,6 +3652,12 @@
 
         // Event listeners for buttons
         startBtn.addEventListener('click', () => {
+            // Initialize audio on first button click
+            if (!userInteracted) {
+                initAudio();
+                userInteracted = true;
+            }
+            
             if (!animationId && !isGameFinished) {
                 animate();
                 startPressureChecker();
@@ -4140,44 +4086,11 @@
             setupSquareInteraction(state.element, state, index);
         });
 
-       // Initialize the game - ensure squares are at their spawn points
+        // Initialize the game - ensure squares are at their spawn points
         initializeSquares();
         
         // Make sure to move squares to their spawn positions initially
         moveSquaresToSpawn();
-
-        soundOnBtn.addEventListener('click', () => {
-        soundEnabled = true;
-        soundOnBtn.classList.add('active');
-        soundOffBtn.classList.remove('active');
-    
-    // Play a test sound to verify it's working
-        const testSound = new Audio('under1.wav');
-        testSound.volume = 0.3;
-    
-        const playPromise = testSound.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.log("Test audio play error:", error);
-            });
-        }
-    });
-
-    soundOffBtn.addEventListener('click', () => {
-        soundEnabled = false;
-        soundOnBtn.classList.remove('active');
-        soundOffBtn.classList.add('active');
-    });
-
-// Initialize based on default state
-    if (soundEnabled) {
-        soundOnBtn.classList.add('active');
-        soundOffBtn.classList.remove('active');
-    } else {
-        soundOnBtn.classList.remove('active');
-        soundOffBtn.classList.add('active');
-    }
-        
     </script>
 </body>
-</html>>
+    </html>
