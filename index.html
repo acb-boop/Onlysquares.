@@ -47,7 +47,7 @@
         
         .frame-grid {
             position: absolute;
-            width: 1Apply00%;
+            width: 100%;
             height: 100%;
             background-image: 
                 linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
@@ -269,7 +269,7 @@
             background-color: #FF5722;
         }
         
-        .obstacle-options, .block-options, .item-options, .moving-obstacle-options {
+        .obstacle-options, .block-options, .item-options, .moving-obstacle-options, .sound-options {
             margin-top: 10px;
             display: flex;
             gap: 10px;
@@ -281,7 +281,7 @@
             border-radius: 8px;
         }
         
-        .obstacle-options label, .block-options label, .item-options label, .moving-obstacle-options label {
+        .obstacle-options label, .block-options label, .item-options label, .moving-obstacle-options label, .sound-options label {
             display: inline-block;
             margin-right: 5px;
             font-weight: bold;
@@ -290,6 +290,7 @@
         .obstacle-options input, .obstacle-options select,
         .block-options input, .block-options select,
         .item-options input, .item-options select,
+        .sound-options input, .sound-options select,
         .moving-obstacle-options input, .moving-obstacle-options select {
             padding: 5px;
             border-radius: 4px;
@@ -442,18 +443,11 @@
         }
 
         /* Sound controls */
-        .sound-controls {
-            margin-top: 10px;
+        .sound-toggle {
             display: flex;
             align-items: center;
-            justify-content: center;
+            margin-top: 10px;
             gap: 10px;
-        }
-        
-        .sound-status {
-            margin-top: 5px;
-            font-size: 12px;
-            color: #666;
         }
     </style>
 </head>
@@ -481,15 +475,10 @@
             <button id="addBlockBtn">Add Block</button>
             <button id="addItemBtn">Add Item</button>
             <button id="clearAllBtn">Clear All</button>
-        </div>
-
-        <div class="sound-controls">
-            <label>
-                <input type="checkbox" id="soundToggle" checked>
-                Sound Effects
-            </label>
-            <button id="testSoundBtn">Test Sound</button>
-            <div id="soundStatus" class="sound-status">Sound status: waiting for user interaction</div>
+            <div class="sound-toggle">
+                <label>Sound:</label>
+                <button id="soundToggleBtn" class="active">On</button>
+            </div>
         </div>
         
         <div class="square-size-control">
@@ -599,7 +588,21 @@
             <p id="selection-status">No object selected</p>
         </div>
     </div>
-   <script>
+
+    <!-- Audio elements for sounds -->
+    <audio id="redSound" preload="auto">
+        <source src="red.wav" type="audio/wav">
+    </audio>
+    <audio id="greenSound" preload="auto">
+        <source src="green.wav" type="audio/wav">
+    </audio>
+    <audio id="blueSound" preload="auto">
+        <source src="blue.wav" type="audio/wav">
+    </audio>
+    <audio id="yellowSound" preload="auto">
+        <source src="yellow.wav" type="audio/wav">
+    </audio>
+    <script>
         // Constants
         const DIRECTIONS = [
             { x: 1, y: -1 },  // 45 degrees
@@ -622,7 +625,7 @@
         const BREAKABLE_PIECES = 12; // number of pieces when obstacle breaks
         const PRESSURE_CHECK_INTERVAL = 100; // ms to check for square pressure
         const KNIFE_PICKUP_COOLDOWN = 1000; // 1 second cooldown in milliseconds
-        const TOTAL_BOUNCE_SOUNDS = 19; // Total number of bounce sound files
+        const SOUND_COOLDOWN = 100; // ms cooldown between sounds to prevent overlapping
         
         // Elements
         const frame = document.getElementById('frame');
@@ -644,142 +647,18 @@
         const finishMessage = document.getElementById('finishMessage');
         
         const selectionStatus = document.getElementById('selection-status');
-        const soundToggle = document.getElementById('soundToggle');
-        const soundStatus = document.getElementById('soundStatus');
-        const testSoundBtn = document.getElementById('testSoundBtn');
-        
-        // ================ IMPROVED SOUND SYSTEM ==================
-        // Sound effects management with Web Audio API for better browser support
-        let currentBounceSound = 1; // Track which bounce sound to play next (1-19)
-        let audioContext = null;
-        let soundBuffers = [];
-        let soundsLoaded = false;
-        let userInteracted = false;
 
-        // Initialize audio context on user interaction
-        function initAudio() {
-            if (audioContext) return;
+        // Sound elements
+        const sounds = {
+            red: document.getElementById('redSound'),
+            green: document.getElementById('greenSound'),
+            blue: document.getElementById('blueSound'),
+            yellow: document.getElementById('yellowSound')
+        };
 
-            try {
-                // Create audio context
-                window.AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioContext = new AudioContext();
-                
-                soundStatus.textContent = "Sound status: Initializing audio...";
-                
-                // Start loading sounds
-                loadSounds();
-                
-                userInteracted = true;
-            } catch (error) {
-                console.error("Error creating AudioContext:", error);
-                soundStatus.textContent = "Sound status: Error initializing audio";
-            }
-        }
-
-        // Load all sound files
-        async function loadSounds() {
-            soundBuffers = [];
-            
-            // Load all 19 sounds in parallel
-            const loadPromises = [];
-            
-            for (let i = 1; i <= TOTAL_BOUNCE_SOUNDS; i++) {
-                loadPromises.push(loadSound(i));
-            }
-            
-            try {
-                await Promise.all(loadPromises);
-                soundsLoaded = true;
-                soundStatus.textContent = `Sound status: Ready (${soundBuffers.length} sounds loaded)`;
-                console.log(`Successfully loaded ${soundBuffers.length} sounds`);
-            } catch (error) {
-                console.error("Error loading sounds:", error);
-                soundStatus.textContent = "Sound status: Error loading sounds";
-            }
-        }
-
-        // Load an individual sound file
-        async function loadSound(index) {
-            try {
-                const response = await fetch(`under${index}.wav`);
-                if (!response.ok) {
-                    throw new Error(`Failed to load under${index}.wav (${response.status})`);
-                }
-                
-                const arrayBuffer = await response.arrayBuffer();
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                
-                soundBuffers[index - 1] = audioBuffer;
-                console.log(`Loaded under${index}.wav`);
-            } catch (error) {
-                console.error(`Error loading under${index}.wav:`, error);
-                // Create a silent buffer as a fallback
-                const sampleRate = audioContext.sampleRate;
-                const buffer = audioContext.createBuffer(2, sampleRate * 0.5, sampleRate);
-                soundBuffers[index - 1] = buffer;
-            }
-        }
-
-        // Play the next bounce sound
-        function playBounceSound() {
-            if (!soundToggle.checked || !audioContext || !soundsLoaded) return;
-            
-            // Resume audio context if it's suspended (needed for Chrome)
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
-            }
-            
-            try {
-                // Get the current sound buffer
-                const buffer = soundBuffers[currentBounceSound - 1];
-                if (!buffer) {
-                    console.warn(`Sound buffer not available for under${currentBounceSound}.wav`);
-                    return;
-                }
-                
-                // Create a source node
-                const source = audioContext.createBufferSource();
-                source.buffer = buffer;
-                
-                // Connect to audio output
-                source.connect(audioContext.destination);
-                
-                // Play the sound
-                source.start(0);
-                
-                // Move to next sound, cycling back to 1 after reaching 19
-                currentBounceSound = (currentBounceSound % TOTAL_BOUNCE_SOUNDS) + 1;
-            } catch (error) {
-                console.error("Error playing sound:", error);
-            }
-        }
-
-        // Test playing sound function
-        function testSound() {
-            if (!audioContext) {
-                initAudio();
-                setTimeout(() => {
-                    if (soundsLoaded) {
-                        playBounceSound();
-                    } else {
-                        soundStatus.textContent = "Sound status: Still loading sounds, try again in a moment";
-                    }
-                }, 500);
-            } else if (soundsLoaded) {
-                playBounceSound();
-                soundStatus.textContent = `Sound status: Playing test sound (${currentBounceSound-1})`;
-            } else {
-                soundStatus.textContent = "Sound status: Sounds still loading, please wait";
-            }
-        }
-
-        // Add event listener for the test sound button
-        testSoundBtn.addEventListener('click', testSound);
-
-        // Initialize audio on first user interaction
-        document.addEventListener('click', initAudio, { once: true });
-        document.addEventListener('keydown', initAudio, { once: true });
+        // Sound toggle button
+        const soundToggleBtn = document.getElementById('soundToggleBtn');
+        let soundEnabled = true;
         
         // Ensure initial square visibility
         squares.forEach(square => {
@@ -863,12 +742,12 @@
         let isSettingWaypoints = false;
         let pathIndicator = null;
         
-        // Define square images and shadow colors
+        // Define square images and shadow colors and sound associations
         const squareImages = [
-            { url: 'red.png', knifeUrl: 'red-knife.png', shadow: 'rgba(255, 0, 0, 0.8)' },
-            { url: 'green.png', knifeUrl: 'green-knife.png', shadow: 'rgba(17, 239, 255, 0.8)' },
-            { url: 'blue.png', knifeUrl: 'blue-knife.png', shadow: 'rgba(33, 150, 243, 0.8)' },
-            { url: 'yellow.png', knifeUrl: 'yellow-knife.png', shadow: 'rgba(255, 193, 7, 0.8)' }
+            { url: 'red.png', knifeUrl: 'red-knife.png', shadow: 'rgba(255, 0, 0, 0.8)', sound: 'red', lastPlayTime: 0 },
+            { url: 'green.png', knifeUrl: 'green-knife.png', shadow: 'rgba(17, 239, 255, 0.8)', sound: 'green', lastPlayTime: 0 },
+            { url: 'blue.png', knifeUrl: 'blue-knife.png', shadow: 'rgba(33, 150, 243, 0.8)', sound: 'blue', lastPlayTime: 0 },
+            { url: 'yellow.png', knifeUrl: 'yellow-knife.png', shadow: 'rgba(255, 193, 7, 0.8)', sound: 'yellow', lastPlayTime: 0 }
         ];
         
         // Define spawn positions
@@ -892,6 +771,8 @@
                 image: squareImages[index].url,
                 knifeImage: squareImages[index].knifeUrl,
                 shadow: squareImages[index].shadow,
+                sound: squareImages[index].sound,
+                lastPlayTime: 0,
                 spawnX: spawnPositions[index].x,
                 spawnY: spawnPositions[index].y,
                 isSmall: false,
@@ -910,8 +791,7 @@
             spawn.style.width = NORMAL_SQUARE_SIZE + 'px';
             spawn.style.height = NORMAL_SQUARE_SIZE + 'px';
         });
-        
-        // Obstacles array
+// Obstacles array
         let obstacles = [];
         
         // Blocks array
@@ -939,6 +819,28 @@
             durability: 3,
             moving: false
         });
+
+        // Play sound for a specific square
+        function playSquareSound(square) {
+            if (!soundEnabled) return;
+            
+            // Check cooldown to prevent sound spamming
+            const now = Date.now();
+            if (now - square.lastPlayTime < SOUND_COOLDOWN) return;
+            
+            // Update last play time
+            square.lastPlayTime = now;
+            
+            // Get the sound element and play it
+            const soundElement = sounds[square.sound];
+            if (soundElement) {
+                // Reset the sound to start from beginning
+                soundElement.currentTime = 0;
+                soundElement.play().catch(error => {
+                    console.log("Sound play error:", error);
+                });
+            }
+        }
         
         // Toggle fullscreen mode
         function toggleFullscreen() {
@@ -1060,6 +962,7 @@
                 state.hasKnife = false;
                 state.teleportCooldown = 0;
                 state.knifePickupCooldown = 0;
+                state.lastPlayTime = 0;
                 
                 updateSquarePosition(state);
                 updateSquareSize(state);
@@ -1169,8 +1072,7 @@
             item.element.style.width = item.size + 'px';
             item.element.style.height = item.size + 'px';
         }
-        
-        // Create particle trail
+// Create particle trail
         function createTrail(state) {
             if (frameCount % TRAIL_SPAWN_RATE !== 0 || state.isExploding || state.isKilled) return;
             
@@ -1473,7 +1375,8 @@
                 frame.appendChild(arrivalFlash);
             }
         }
-       // Transform square size
+        
+        // Transform square size
         function transformSquare(square) {
             // Toggle size
             square.isSmall = !square.isSmall;
@@ -1501,8 +1404,7 @@
             effect.style.boxShadow = '0 0 30px #00FF00';
             frame.appendChild(effect);
         }
-
-        // Give knife to a square
+// Give knife to a square
         function giveKnife(square, knifeItem) {
             // Add knife to square
             square.hasKnife = true;
@@ -1699,7 +1601,7 @@
                 }
             });
         }
-
+        
         // Update position of moving obstacles
         function updateMovingObstacles() {
             obstacles.forEach(obstacle => {
@@ -1777,8 +1679,8 @@
                 }
             });
         }
-
-        // Check collision with obstacle - updated to handle different types of obstacles
+        
+        // Check collision with obstacle - updated to handle different types of obstacles and play sounds
         function checkObstacleCollision(state, obstacle) {
             if (state.isExploding || state.isKilled) return false;
             
@@ -1820,8 +1722,8 @@
             }
             
             if (hasCollided) {
-                // Play bounce sound on collision
-                playBounceSound();
+                // Play the square's sound
+                playSquareSound(state);
                 
                 // Get centers
                 const centerX = state.x + state.width / 2;
@@ -1938,8 +1840,7 @@
             }
             
             return false;
-        }
-       // Check collision with frame
+        }// Check collision with frame - with sound added
         function checkFrameCollision(state) {
             if (state.isExploding || state.isKilled) return false;
             
@@ -1969,10 +1870,10 @@
                 hasCollided = true;
             }
             
-            // Create wall collision effect
+            // Play sound and create wall collision effect
             if (hasCollided) {
-                // Play bounce sound on wall collision
-                playBounceSound();
+                // Play the collision sound
+                playSquareSound(state);
                 
                 createCollisionEffect(
                     state.x + state.width/2,
@@ -2055,7 +1956,7 @@
             return false;
         }
         
-        // Check collision between squares with proper reflection
+        // Check collision between squares with proper reflection and sound
         function checkSquareCollisions() {
             for (let i = 0; i < squareStates.length; i++) {
                 for (let j = i + 1; j < squareStates.length; j++) {
@@ -2073,6 +1974,10 @@
                         square1.y < square2.y + square2.height &&
                         square1.y + square1.height > square2.y
                     ) {
+                        // Play sounds for both squares
+                        playSquareSound(square1);
+                        playSquareSound(square2);
+                        
                         // Calculate collision point for knife dropping
                         const center1X = square1.x + square1.width / 2;
                         const center1Y = square1.y + square1.height / 2;
@@ -2154,9 +2059,6 @@
                         
                         // No knife, proceed with normal collision
                         
-                        // Play bounce sound on square collision
-                        playBounceSound();
-                        
                         // Create collision effect
                         createCollisionEffect(collisionX, collisionY, square1.shadow, square2.shadow);
                         
@@ -2208,7 +2110,7 @@
                 }
             }
         }
-       // Animation loop
+// Animation loop
         function animate() {
             frameCount++;
             
@@ -2565,7 +2467,7 @@
             
             return newItem;
         }
-
+        
         // Setup a waypoint for moving obstacles
         function setupWaypoint(element, waypoint, index) {
             // Delete button
@@ -2643,8 +2545,7 @@
                 e.preventDefault();
             });
         }
-        
-        // Update path indicator for moving obstacles
+// Update path indicator for moving obstacles
         function updatePathIndicator() {
             // Remove existing path indicator
             if (pathIndicator) {
@@ -2759,7 +2660,8 @@
             
             return newWaypoint;
         }
-       // Setup obstacle interaction (drag, delete, select)
+        
+        // Setup obstacle interaction (drag, delete, select)
         function setupObstacleInteraction(element, obstacle) {
             // Delete button
             const deleteBtn = element.querySelector('.obstacle-delete') || document.createElement('div');
@@ -2864,8 +2766,7 @@
                 }
             });
         }
-        
-        // Setup block interaction (drag, delete, select)
+// Setup block interaction (drag, delete, select)
         function setupBlockInteraction(element, block) {
             // Delete button
             const deleteBtn = element.querySelector('.block-delete') || document.createElement('div');
@@ -3056,6 +2957,7 @@
                 }
             });
         }
+        
         // Setup square interaction (select, drag)
         function setupSquareInteraction(element, square, index) {
             // Select square
@@ -3148,8 +3050,7 @@
                 }
             });
         }
-        
-        // Deselect all objects
+// Deselect all objects
         function deselectAllObjects() {
             // Deselect obstacle if any selected
             if (selectedObstacle) {
@@ -3208,6 +3109,21 @@
                 let newY = e.clientY - dragOffsetY - frameRect.top;
                 
                 // Apply boundaries
+                newX = Math.max(0, Math.min(newX, frame.clientWidth - selectedObstacle.width));
+                newY = Math.max(0, Math.min(newY, frame.clientHeight - selectedObstacle.height));
+                
+                // Update position
+                selectedObstacle.x = newX;
+                selectedObstacle.y = newY;
+                
+                // Update DOM
+                updateObstaclePosition(selectedObstacle);
+            } else if (selectedBlock) {
+                // Calculate new position within frame boundaries
+                let newX = e.clientX - dragOffsetX - frameRect.left;
+                let newY = e.clientY - dragOffsetY - frameRect.top;
+                
+                // Apply boundaries
                 newX = Math.max(0, Math.min(newX, frame.clientWidth - selectedBlock.width));
                 newY = Math.max(0, Math.min(newY, frame.clientHeight - selectedBlock.height));
                 
@@ -3233,7 +3149,7 @@
                 // Update DOM
                 updateItemPosition(selectedItem);
             } else if (selectedSquare) {
-                // Calculate new position within frame boundaries
+                // Calculatenew position within frame boundaries
                 let newX = e.clientX - dragOffsetX - frameRect.left;
                 let newY = e.clientY - dragOffsetY - frameRect.top;
                 
@@ -3305,12 +3221,6 @@
         
         // Keyboard event handling
         document.addEventListener('keydown', (e) => {
-            // Initialize audio on first key press
-            if (!userInteracted) {
-                initAudio();
-                userInteracted = true;
-            }
-            
             // Square selection with number keys
             if (!isNaN(parseInt(e.key)) && parseInt(e.key) >= 1 && parseInt(e.key) <= 4) {
                 const index = parseInt(e.key) - 1;
@@ -3421,8 +3331,7 @@
                 
                 updateSelectionStatus();
             }
-            
-            // Arrow keys for moving selected object
+// Arrow keys for moving selected object
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
                 // Stop animation if it's running and a square is selected
                 if (animationId && selectedSquare) {
@@ -3662,7 +3571,7 @@
                     startPressureChecker();
                 }
             }
-
+            
             // Add speed control for selected moving obstacle (+ and - keys)
             if ((e.key === '+' || e.key === '=') && selectedObstacle && selectedObstacle.moving) {
                 // Increase speed
@@ -3784,15 +3693,8 @@
                 e.preventDefault();
             }
         }, { passive: false });
-
-        // Event listeners for buttons
+// Event listeners for buttons
         startBtn.addEventListener('click', () => {
-            // Initialize audio on first button click
-            if (!userInteracted) {
-                initAudio();
-                userInteracted = true;
-            }
-            
             if (!animationId && !isGameFinished) {
                 animate();
                 startPressureChecker();
@@ -3819,6 +3721,13 @@
             if (isFullscreen) {
                 toggleFullscreen();
             }
+        });
+
+        // Sound toggle button handler
+        soundToggleBtn.addEventListener('click', () => {
+            soundEnabled = !soundEnabled;
+            soundToggleBtn.textContent = soundEnabled ? 'On' : 'Off';
+            soundToggleBtn.classList.toggle('active', soundEnabled);
         });
 
         // Add obstacle button handler
@@ -4228,4 +4137,4 @@
         moveSquaresToSpawn();
     </script>
 </body>
-                        </html>
+</html>
